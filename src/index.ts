@@ -1,9 +1,28 @@
 import { ponder } from "@/generated";
+import { formatEther } from "viem";
+import { erc20ABI } from "../abis/erc20ABI";
+import { factoryABI } from '../abis/factoryABI';
 
-ponder.on("ERC20:Transfer", async ({ event, context }) => {
-  const { Account, TransferEvent } = context.db;
+ponder.on("Numo:Swap", async ({ event, context }) => {
+  const { Swap, Account } = context.db;
 
-  // Create an Account for the sender, or update the balance if it already exists.
+  await Swap.create({
+    id: event.transaction.hash,
+    data: {
+      poolId: event.args.poolId,
+      sender: event.args.account,
+      amountIn: parseFloat(formatEther(event.args.inputAmount)),
+      amountInWad: event.args.inputAmount,
+      amountOut: parseFloat(formatEther(event.args.outputAmount)),
+      amountOutWad: event.args.outputAmount,
+      tokenIn: event.args.tokenIn,
+      tokenOut: event.args.tokenOut,
+      timestamp: event.block.timestamp,
+      block: event.block.number,
+    },
+  });
+
+  // Create or update sender's account balance
   await Account.upsert({
     id: event.args.from,
     create: {
@@ -11,60 +30,74 @@ ponder.on("ERC20:Transfer", async ({ event, context }) => {
       isOwner: false,
     },
     update: ({ current }) => ({
-      balance: current.balance - event.args.amount,
+      balance: current.balance - event.args.inputAmount,
     }),
   });
 
-  // Create an Account for the recipient, or update the balance if it already exists.
+  // Create or update recipient's account balance
   await Account.upsert({
     id: event.args.to,
     create: {
-      balance: event.args.amount,
+      balance: event.args.outputAmount,
       isOwner: false,
     },
     update: ({ current }) => ({
-      balance: current.balance + event.args.amount,
+      balance: current.balance + event.args.outputAmount,
     }),
   });
 
-  // Create a TransferEvent.
-  await TransferEvent.create({
-    id: event.log.id,
-    data: {
-      fromId: event.args.from,
-      toId: event.args.to,
-      amount: event.args.amount,
-      timestamp: Number(event.block.timestamp),
-    },
-  });
+  const swap = await Swap.findUnique({ id: event.transaction.hash });
+  console.log(swap);
 });
 
-ponder.on("ERC20:Approval", async ({ event, context }) => {
-  const { Allowance, ApprovalEvent } = context.db;
+ponder.on("Numo2:Mint", async ({ event, context }) => {
+  const { Mint, Position, Pool } = context.db;
 
-  const allowanceId = `${event.args.owner}-${event.args.spender}`;
+  const _pool = await Pool.findUnique({ id: event.args.poolId });
 
-  // Create or update the Allowance.
-  await Allowance.upsert({
-    id: allowanceId,
-    create: {
-      ownerId: event.args.owner,
-      spenderId: event.args.spender,
-      amount: event.args.amount,
-    },
-    update: {
-      amount: event.args.amount,
+  const lptSupply = await context.client.readContract({
+    abi: erc20ABI,
+    address: _pool.lpToken,
+    functionName: "totalSupply",
+  });
+
+  await Mint.create({
+    id: event.transaction.hash,
+    data: {
+      poolId: event.args.poolId,
+      sender: event.args.account,
+      deltas: event.args.deltas.map((d) => parseFloat(formatEther(d))),
+      deltasWad: event.args.deltas,
+      deltaLiquidity: parseFloat(formatEther(event.args.deltaL)),
+      deltaLiquidityWad: event.args.deltaL,
+      timestamp: event.block.timestamp,
+      block: event.block.number,
     },
   });
 
-  // Create an ApprovalEvent.
-  await ApprovalEvent.create({
-    id: event.log.id,
-    data: {
-      ownerId: event.args.owner,
-      spenderId: event.args.spender,
-      amount: event.args.amount,
-      timestamp: Number(event.block.timestamp),
+  await Pool.update({
+    id: event.args.poolId,
+    data: ({ current }) => ({
+      reserves: current.reserves.map((r, i) => r + parseFloat(formatEther(event.args.deltas[i] ?? 0n))),
+      reservesWad: current.reservesWad.map((r, i) => r + (event.args.deltas[i] ?? 0n)),
+      liquidityWad: current.liquidityWad + event.args.deltaL,
+      liquidity: parseFloat(formatEther(current.liquidityWad + event.args.deltaL)),
+      liquidityTokenSupply: parseFloat(formatEther(lptSupply)),
+      liquidityTokenSupplyWad: lptSupply,
+    }),
+  });
+
+  await Position.upsert({
+    id: computePositionId(event.args.poolId, event.args.account),
+    create: {
+      liquidityWad: event.args.deltaL,
+      liquidity: parseFloat(formatEther(event.args.deltaL)),
+      accountId: event.args.account,
+      poolId: event.args.poolId,
     },
+    update: ({ current }) => ({
+      liquidityWad: current.liquidityWad + event.args.deltaL,
+      liquidity: parseFloat(current.liquidity.toString()) + parseFloat(formatEther(event.args.deltaL)),
+    }),
   });
 });
