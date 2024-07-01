@@ -1,6 +1,12 @@
-# Example ERC20 token API
+# Numo GraphQL API
 
-This example shows how to create a GraphQL API for an ERC20 token using Ponder. It uses the Adventure Gold token contract on Ethereum ([Link](https://etherscan.io/address/0x32353A6C91143bfd6C7d363B546e62a9A2489A20)).
+The repo contains the indexer for the Numo v1 smart contract suite deployed on Arbitrum.
+
+## Set up
+
+- Run `bun i` to install dependancies.
+- Create a `.env` file and add an RPC endpoint.
+- Run bun dev to start development server.
 
 ## Sample queries
 
@@ -55,4 +61,3 @@ This example shows how to create a GraphQL API for an ERC20 token using Ponder. 
   }
 }
 ```
-# numo-indexer
