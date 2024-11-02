@@ -3,7 +3,7 @@ import { formatEther } from "viem";
 import { erc20ABI } from "../abis/erc20ABI";
 import { factoryABI } from '../abis/factoryABI';
 
-ponder.on("Numo:Swap", async ({ event, context }) => {
+ponder.on("Numo:Exercise", async ({ event, context }) => {
   const { Swap, Account } = context.db;
 
   await Swap.create({
@@ -50,7 +50,7 @@ ponder.on("Numo:Swap", async ({ event, context }) => {
   console.log(swap);
 });
 
-ponder.on("Numo2:Mint", async ({ event, context }) => {
+ponder.on("Numo:Mint", async ({ event, context }) => {
   const { Mint, Position, Pool } = context.db;
 
   const _pool = await Pool.findUnique({ id: event.args.poolId });
